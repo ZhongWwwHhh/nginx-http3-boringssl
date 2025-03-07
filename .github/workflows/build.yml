@@ -25,10 +25,23 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt install -y build-essential ca-certificates zlib1g-dev libpcre3 libpcre3-dev tar unzip libssl-dev wget curl git cmake ninja-build libunwind-dev pkg-config
-          if [ "${{ matrix.arch }}" == "arm64" ]; then
-            sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross;
-          fi
+          sudo apt install -y build-essential ca-certificates zlib1g-dev libpcre3 libpcre3-dev tar unzip libssl-dev wget curl git cmake ninja-build libunwind-dev pkg-config qemu-user-static debootstrap
+
+      - name: Setup ARM64 Environment
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo debootstrap --arch=arm64 focal /arm64-rootfs http://ports.ubuntu.com/
+          sudo cp /usr/bin/qemu-aarch64-static /arm64-rootfs/usr/bin/
+          echo "nameserver 8.8.8.8" | sudo tee /arm64-rootfs/etc/resolv.conf
+          sudo mount --bind /dev /arm64-rootfs/dev
+          sudo mount --bind /proc /arm64-rootfs/proc
+          sudo mount --bind /sys /arm64-rootfs/sys
+
+      - name: Install Dependencies in ARM64 Environment
+        if: matrix.arch == 'arm64'
+        run: |
+          sudo chroot /arm64-rootfs apt update
+          sudo chroot /arm64-rootfs apt install -y build-essential ca-certificates zlib1g-dev libpcre3 libpcre3-dev tar unzip libssl-dev wget curl git cmake ninja-build libunwind-dev pkg-config
 
       - name: Get BoringSSL Latest Commit
         id: boringssl_commit
@@ -79,7 +92,7 @@ jobs:
           mkdir build
           cd build
           if [ "${{ matrix.arch }}" == "arm64" ]; then
-            cmake -GNinja -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_SYSROOT=/usr/aarch64-linux-gnu -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu ..;
+            sudo chroot /arm64-rootfs cmake -GNinja ..;
           else
             cmake -GNinja ..;
           fi
@@ -93,7 +106,7 @@ jobs:
           cd ngx_brotli/deps/brotli
           mkdir out && cd out
           if [ "${{ matrix.arch }}" == "arm64" ]; then
-            cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_SYSROOT=/usr/aarch64-linux-gnu -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu -DCMAKE_C_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed ..;
+            sudo chroot /arm64-rootfs cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed ..;
           else
             cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed ..;
           fi
@@ -105,7 +118,7 @@ jobs:
         run: |
           cd nginx
           if [ "${{ matrix.arch }}" == "arm64" ]; then
-            CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ ./auto/configure \
+            sudo chroot /arm64-rootfs ./auto/configure \
               --user=nginx \
               --group=nginx \
               --with-pcre  \
