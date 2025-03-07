@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt install -y build-essential ca-certificates zlib1g-dev libpcre3 libpcre3-dev tar unzip libssl-dev wget curl git cmake ninja-build libunwind-dev pkg-config
           if [ "${{ matrix.arch }}" == "arm64" ]; then
-            sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu;
+            sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross;
           fi
 
       - name: Get BoringSSL Latest Commit
