@@ -12,6 +12,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -20,7 +24,11 @@ jobs:
         run: sudo apt update
 
       - name: Install Dependencies
-        run: sudo apt install -y build-essential ca-certificates zlib1g-dev libpcre3 libpcre3-dev tar unzip libssl-dev wget curl git cmake ninja-build libunwind-dev pkg-config
+        run: |
+          sudo apt install -y build-essential ca-certificates zlib1g-dev libpcre3 libpcre3-dev tar unzip libssl-dev wget curl git cmake ninja-build libunwind-dev pkg-config
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            sudo apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu;
+          fi
 
       - name: Get BoringSSL Latest Commit
         id: boringssl_commit
@@ -32,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: boringssl
-          key: ${{ runner.os }}-boringssl-${{ env.boringssl-commit }}
+          key: ${{ runner.os }}-boringssl-${{ env.boringssl-commit }}-${{ matrix.arch }}
 
       - name: Get Brotil Latest Commit
         id: ngx_brotli_commit
@@ -44,7 +52,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ngx_brotli
-          key: ${{ runner.os }}-ngx_brotli-${{ env.ngx-brotli-commit }}
+          key: ${{ runner.os }}-ngx_brotli-${{ env.ngx-brotli-commit }}-${{ matrix.arch }}
 
       - name: Get Nginx Latest Release Tag
         id: latest_nginx_tag
@@ -56,7 +64,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: nginx
-          key: ${{ runner.os }}-nginx-${{ env.latest-nginx-tag }}
+          key: ${{ runner.os }}-nginx-${{ env.latest-nginx-tag }}-${{ matrix.arch }}
 
       - if: steps.cache_nginx.outputs.cache-hit != 'true'
         name: Prepare NGINX source
@@ -70,7 +78,11 @@ jobs:
           cd boringssl
           mkdir build
           cd build
-          cmake -GNinja ..
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            cmake -GNinja -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ ..;
+          else
+            cmake -GNinja ..;
+          fi
           ninja -j $(nproc)
           cd ../..
 
@@ -80,7 +92,11 @@ jobs:
           git clone --recurse-submodules -j8 https://github.com/google/ngx_brotli
           cd ngx_brotli/deps/brotli
           mkdir out && cd out
-          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed ..
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DCMAKE_C_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed ..;
+          else
+            cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_C_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_CXX_FLAGS="-Ofast -m64 -march=native -mtune=native -flto -funroll-loops -ffunction-sections -fdata-sections -Wl,--gc-sections" -DCMAKE_INSTALL_PREFIX=./installed ..;
+          fi
           cmake --build . --config Release --target brotlienc
           cd ../../../..
 
@@ -88,36 +104,63 @@ jobs:
         name: Make Nginx
         run: |
           cd nginx
-          ./auto/configure \
-            --user=nginx \
-            --group=nginx \
-            --with-pcre  \
-            --add-module=../ngx_brotli \
-            --with-http_v2_module \
-            --with-stream \
-            --with-stream_ssl_module \
-            --with-http_ssl_module \
-            --with-http_gzip_static_module \
-            --with-http_gunzip_module \
-            --with-http_sub_module \
-            --with-http_flv_module \
-            --with-http_addition_module \
-            --with-http_realip_module \
-            --with-http_mp4_module \
-            --with-ld-opt=-Wl,-E \
-            --with-cc-opt=-Wno-error \
-            --with-ld-opt=-ljemalloc \
-            --with-http_dav_module \
-            --with-http_v3_module \
-            --with-cc=c++ \
-            --with-cc-opt="-I../boringssl/include -x c" \
-            --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto"
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ ./auto/configure \
+              --user=nginx \
+              --group=nginx \
+              --with-pcre  \
+              --add-module=../ngx_brotli \
+              --with-http_v2_module \
+              --with-stream \
+              --with-stream_ssl_module \
+              --with-http_ssl_module \
+              --with-http_gzip_static_module \
+              --with-http_gunzip_module \
+              --with-http_sub_module \
+              --with-http_flv_module \
+              --with-http_addition_module \
+              --with-http_realip_module \
+              --with-http_mp4_module \
+              --with-ld-opt=-Wl,-E \
+              --with-cc-opt=-Wno-error \
+              --with-ld-opt=-ljemalloc \
+              --with-http_dav_module \
+              --with-http_v3_module \
+              --with-cc=aarch64-linux-gnu-g++ \
+              --with-cc-opt="-I../boringssl/include -x c" \
+              --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto";
+          else
+            ./auto/configure \
+              --user=nginx \
+              --group=nginx \
+              --with-pcre  \
+              --add-module=../ngx_brotli \
+              --with-http_v2_module \
+              --with-stream \
+              --with-stream_ssl_module \
+              --with-http_ssl_module \
+              --with-http_gzip_static_module \
+              --with-http_gunzip_module \
+              --with-http_sub_module \
+              --with-http_flv_module \
+              --with-http_addition_module \
+              --with-http_realip_module \
+              --with-http_mp4_module \
+              --with-ld-opt=-Wl,-E \
+              --with-cc-opt=-Wno-error \
+              --with-ld-opt=-ljemalloc \
+              --with-http_dav_module \
+              --with-http_v3_module \
+              --with-cc=c++ \
+              --with-cc-opt="-I../boringssl/include -x c" \
+              --with-ld-opt="-L../boringssl/build/ssl -L../boringssl/build/crypto";
+          fi
           make -j $(nproc)
 
       - name: Generate Release Name
         run: |
-          release_name="nginx-${{ env.latest-nginx-tag }}-$(date +'%Y.%m.%d')"
-          release_file_name="${release_name}-linux-amd64"
+          release_name="nginx-${{ env.latest-nginx-tag }}-$(date +'%Y.%m.%d')-${{ matrix.arch }}"
+          release_file_name="${release_name}-linux-${{ matrix.arch }}"
           echo "release-name=${release_name}" >> $GITHUB_ENV
           echo "release-file-name=${release_file_name}" >> $GITHUB_ENV
           cp nginx/objs/nginx $release_file_name
